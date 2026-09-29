@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Hierarchical Real-Time Roofline Golden Zone Explorer (DRAM vs. L2 Cache)
+Hierarchical Real-Time Roofline Best Cap Explorer (DRAM vs. L2 Cache)
 ========================================================================
 Sweeps Arithmetic Intensity (AI) from ~0 upwards in intervals of 10 FLOPs/Byte
 for both:
@@ -17,8 +17,8 @@ Measures:
   - Performance degradation vs unconstrained baseline (%)
   - Net energy savings (%)
   - Achieved memory bandwidth (GB/s) & achieved compute (TFLOP/s)
-  - Discovers the Pareto-optimal Golden Zone Power Cap for each AI
-  - Evaluates Golden Zone saturation across both memory hierarchies
+  - Discovers the Pareto-optimal Best Cap for each AI
+  - Evaluates Best Cap saturation across both memory hierarchies
 
 Directory Structure:
   <output_dir>/
@@ -29,12 +29,12 @@ Directory Structure:
         ai_10/
           powercap_100.csv ... powercap_250.csv
         raw_sweep_data.csv (updated after each AI completes)
-        golden_zone_by_ai.csv (updated after each AI completes)
+        best_cap_by_ai.csv (updated after each AI completes)
       l2/
         ai_0/
           powercap_100.csv ... powercap_250.csv
         raw_sweep_data.csv
-        golden_zone_by_ai.csv
+        best_cap_by_ai.csv
       hierarchical_roofline_summary.md
     run2/
       ...
@@ -234,7 +234,7 @@ def run_single_regime(regime_name, buffer_mb, iterations, warmup_iters,
     os.makedirs(regime_dir, exist_ok=True)
 
     raw_results = []
-    golden_zone_summary = []
+    best_cap_summary = []
     consecutive_saturated = 0
     plateau_ref_cap = None
 
@@ -398,17 +398,17 @@ def run_single_regime(regime_name, buffer_mb, iterations, warmup_iters,
             print(f"    [SLEEP] Settling for 2.0s after powercap {cap}W...", flush=True)
             time.sleep(2.0)
 
-        # Determine Golden Zone Cap:
+        # Determine Best Cap Cap:
         # Must satisfy performance degradation <= deg_threshold AND have positive energy savings (> 0.0%)
         eligible_caps = [r for r in ai_run_data if r['perf_deg_pct'] <= args.deg_threshold and r['energy_saved_pct'] > 0.0]
         if eligible_caps:
             # Select the cap maximizing net energy saved
             eligible_caps.sort(key=lambda x: x['energy_saved_pct'], reverse=True)
-            best_gz = eligible_caps[0]
+            best_row = eligible_caps[0]
         else:
-            # If no reduced cap saves energy within degradation budget, Golden Zone is baseline unconstrained cap
-            best_gz = ai_run_data[0]
-        current_cap = best_gz['power_cap_w']
+            # If no reduced cap saves energy within degradation budget, Best Cap is baseline unconstrained cap
+            best_row = ai_run_data[0]
+        current_cap = best_row['power_cap_w']
         if plateau_ref_cap is None:
             plateau_ref_cap = current_cap
             consecutive_saturated = 1
@@ -420,46 +420,46 @@ def run_single_regime(regime_name, buffer_mb, iterations, warmup_iters,
 
         is_saturated = (current_cap == args.power_caps[0]) or (consecutive_saturated >= args.saturation_count)
 
-        gz_record = {
+        best_record = {
             'regime': regime_name,
             'target_ai': ai,
             'true_ai': true_ai,
-            'achieved_ai': best_gz['achieved_ai'],
-            'golden_cap_w': best_gz['power_cap_w'],
-            'golden_runtime_s': best_gz['runtime_s'],
-            'golden_power_w': best_gz['avg_power_w'],
-            'golden_energy_j': best_gz['total_energy_j'],
-            'golden_deg_pct': best_gz['perf_deg_pct'],
-            'golden_energy_saved_pct': best_gz['energy_saved_pct'],
-            'achieved_bw_gbs': best_gz['achieved_bw_gbs'],
-            'achieved_tflops': best_gz['achieved_tflops'],
+            'achieved_ai': best_row['achieved_ai'],
+            'best_cap_w': best_row['power_cap_w'],
+            'best_runtime_s': best_row['runtime_s'],
+            'best_power_w': best_row['avg_power_w'],
+            'best_energy_j': best_row['total_energy_j'],
+            'best_deg_pct': best_row['perf_deg_pct'],
+            'best_energy_saved_pct': best_row['energy_saved_pct'],
+            'achieved_bw_gbs': best_row['achieved_bw_gbs'],
+            'achieved_tflops': best_row['achieved_tflops'],
             'baseline_cap_w': args.power_caps[0],
             'baseline_runtime_s': baseline_runtime,
             'baseline_power_w': baseline_power,
             'baseline_energy_j': baseline_energy,
             'is_saturated': is_saturated
         }
-        golden_zone_summary.append(gz_record)
+        best_cap_summary.append(best_record)
 
-        print(f"  >> [{regime_name.upper()} RESULT for AI={ai:.1f}]: Golden Cap = {best_gz['power_cap_w']} W (Perf Drop: {best_gz['perf_deg_pct']:.2f}%, Energy Saved: {best_gz['energy_saved_pct']:.2f}%, BW: {best_gz['achieved_bw_gbs']:.1f} GB/s, Compute: {best_gz['achieved_tflops']:.2f} TFLOP/s, Achieved AI: {best_gz['achieved_ai']:.2f} FLOP/B)")
+        print(f"  >> [{regime_name.upper()} RESULT for AI={ai:.1f}]: Best Cap = {best_row['power_cap_w']} W (Perf Drop: {best_row['perf_deg_pct']:.2f}%, Energy Saved: {best_row['energy_saved_pct']:.2f}%, BW: {best_row['achieved_bw_gbs']:.1f} GB/s, Compute: {best_row['achieved_tflops']:.2f} TFLOP/s, Achieved AI: {best_row['achieved_ai']:.2f} FLOP/B)")
 
         sat_label = f"baseline {args.power_caps[0]}W" if current_cap == args.power_caps[0] else f"steady plateau ~{plateau_ref_cap}W (±10W)"
         if consecutive_saturated > 1 or current_cap == args.power_caps[0]:
-            print(f"  >> [{regime_name.upper()} SATURATION TRACKER] ({consecutive_saturated}/{args.saturation_count}) Golden Zone at {sat_label}.")
+            print(f"  >> [{regime_name.upper()} SATURATION TRACKER] ({consecutive_saturated}/{args.saturation_count}) Best Cap at {sat_label}.")
 
         # Save incremental results to disk immediately after each AI completes
         raw_csv = os.path.join(regime_dir, "raw_sweep_data.csv")
-        gz_csv = os.path.join(regime_dir, "golden_zone_by_ai.csv")
+        best_csv = os.path.join(regime_dir, "best_cap_by_ai.csv")
         safe_write_csv(pd.DataFrame(raw_results), raw_csv)
-        safe_write_csv(pd.DataFrame(golden_zone_summary), gz_csv)
-        print(f"  [SAVED] Incremental progress flushed to {raw_csv} & {gz_csv}", flush=True)
+        safe_write_csv(pd.DataFrame(best_cap_summary), best_csv)
+        print(f"  [SAVED] Incremental progress flushed to {raw_csv} & {best_csv}", flush=True)
 
         # Update comparative summary report incrementally after each AI
         try:
             other_regime = "l2" if regime_name.lower() == "dram" else "dram"
-            other_path = os.path.join(run_dir, other_regime, "golden_zone_by_ai.csv")
+            other_path = os.path.join(run_dir, other_regime, "best_cap_by_ai.csv")
             other_df = pd.read_csv(other_path) if os.path.exists(other_path) else None
-            curr_df = pd.DataFrame(golden_zone_summary)
+            curr_df = pd.DataFrame(best_cap_summary)
             dram_df = curr_df if regime_name.lower() == "dram" else other_df
             l2_df = other_df if regime_name.lower() == "dram" else curr_df
             generate_comparative_report(dram_df, l2_df, run_dir, args.deg_threshold)
@@ -472,15 +472,15 @@ def run_single_regime(regime_name, buffer_mb, iterations, warmup_iters,
 
     # Final Save of Regime CSVs
     raw_df = pd.DataFrame(raw_results)
-    gz_df = pd.DataFrame(golden_zone_summary)
+    best_df = pd.DataFrame(best_cap_summary)
 
     safe_write_csv(raw_df, os.path.join(regime_dir, "raw_sweep_data.csv"))
-    safe_write_csv(gz_df, os.path.join(regime_dir, "golden_zone_by_ai.csv"))
+    safe_write_csv(best_df, os.path.join(regime_dir, "best_cap_by_ai.csv"))
 
     print(f"\nSaved {regime_name} datasets to: {regime_dir}")
-    return raw_df, gz_df
+    return raw_df, best_df
 
-def generate_comparative_report(dram_gz, l2_gz, output_dir, threshold):
+def generate_comparative_report(dram_best, l2_best, output_dir, threshold):
     """Produces the comprehensive comparative report comparing GDDR DRAM vs L2 Cache Rooflines."""
     report_path = os.path.join(output_dir, "hierarchical_roofline_summary.md")
     try:
@@ -489,7 +489,7 @@ def generate_comparative_report(dram_gz, l2_gz, output_dir, threshold):
         report_path = os.path.join(output_dir, "hierarchical_roofline_summary_user.md")
         f = open(report_path, "w")
     with f:
-        f.write("# Hierarchical Real-Time Roofline: GDDR DRAM vs. L2 Cache Golden Zones\n\n")
+        f.write("# Hierarchical Real-Time Roofline: GDDR DRAM vs. L2 Cache Best Caps\n\n")
         f.write("**Target Hardware:** NVIDIA RTX 5000 Ada Generation (AD102, CC 8.9)\n")
         f.write(f"**Tolerance Threshold:** $\\le {threshold:.1f}\\%$ Performance Degradation\n\n")
 
@@ -501,40 +501,40 @@ def generate_comparative_report(dram_gz, l2_gz, output_dir, threshold):
         f.write("| **Hardware Ridge Point ($I^*$)** | **$113.33\\text{ FLOPs/Byte}$** | **$\\approx 25.10\\text{ FLOPs/Byte}$** |\n")
         f.write("| **Working Set Tested** | $256\\text{ MB}$ (Flushes $64\\text{ MB}$ L2 cache) | $16\\text{ MB}$ (Resides $100\\%$ inside L2 cache) |\n\n")
 
-        f.write("## 2. Side-by-Side Golden Zone Comparison\n\n")
+        f.write("## 2. Side-by-Side Best Cap Comparison\n\n")
         f.write("| Arithmetic Intensity | GDDR Cap | DRAM BW (GB/s) | DRAM Compute | DRAM Achieved AI | DRAM Energy Saved | L2 Cap | L2 BW (GB/s) | L2 Compute | L2 Achieved AI | L2 Energy Saved | Architectural Divergence |\n")
         f.write("| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n")
 
         # Outer join or unified AI index
         all_ais = sorted(list(set(
-            (dram_gz['target_ai'].tolist() if dram_gz is not None else []) +
-            (l2_gz['target_ai'].tolist() if l2_gz is not None else [])
+            (dram_best['target_ai'].tolist() if dram_best is not None else []) +
+            (l2_best['target_ai'].tolist() if l2_best is not None else [])
         )))
 
-        dram_map = {r['target_ai']: r for _, r in dram_gz.iterrows()} if dram_gz is not None else {}
-        l2_map = {r['target_ai']: r for _, r in l2_gz.iterrows()} if l2_gz is not None else {}
+        dram_map = {r['target_ai']: r for _, r in dram_best.iterrows()} if dram_best is not None else {}
+        l2_map = {r['target_ai']: r for _, r in l2_best.iterrows()} if l2_best is not None else {}
 
         for ai in all_ais:
             d_row = dram_map.get(ai, None)
             l_row = l2_map.get(ai, None)
 
-            d_cap_str = f"**{d_row['golden_cap_w']} W**" if d_row is not None else "N/A"
+            d_cap_str = f"**{d_row['best_cap_w']} W**" if d_row is not None else "N/A"
             d_bw_str = f"{d_row['achieved_bw_gbs']:.1f}" if (d_row is not None and 'achieved_bw_gbs' in d_row) else "N/A"
             d_tf_str = f"{d_row['achieved_tflops']:.2f} TFLOP/s" if (d_row is not None and 'achieved_tflops' in d_row) else "N/A"
             d_ai_str = f"{d_row['achieved_ai']:.2f} FLOP/B" if (d_row is not None and 'achieved_ai' in d_row) else (f"{d_row['true_ai']:.2f} FLOP/B" if d_row is not None else "N/A")
-            d_sav_str = f"{d_row['golden_energy_saved_pct']:>+5.2f} %" if d_row is not None else "N/A"
+            d_sav_str = f"{d_row['best_energy_saved_pct']:>+5.2f} %" if d_row is not None else "N/A"
             
-            l_cap_str = f"**{l_row['golden_cap_w']} W**" if l_row is not None else "N/A"
+            l_cap_str = f"**{l_row['best_cap_w']} W**" if l_row is not None else "N/A"
             l_bw_str = f"{l_row['achieved_bw_gbs']:.1f}" if (l_row is not None and 'achieved_bw_gbs' in l_row) else "N/A"
             l_tf_str = f"{l_row['achieved_tflops']:.2f} TFLOP/s" if (l_row is not None and 'achieved_tflops' in l_row) else "N/A"
             l_ai_str = f"{l_row['achieved_ai']:.2f} FLOP/B" if (l_row is not None and 'achieved_ai' in l_row) else (f"{l_row['true_ai']:.2f} FLOP/B" if l_row is not None else "N/A")
-            l_sav_str = f"{l_row['golden_energy_saved_pct']:>+5.2f} %" if l_row is not None else "N/A"
+            l_sav_str = f"{l_row['best_energy_saved_pct']:>+5.2f} %" if l_row is not None else "N/A"
 
             if d_row is not None and l_row is not None:
-                if d_row['golden_cap_w'] == l_row['golden_cap_w']:
+                if d_row['best_cap_w'] == l_row['best_cap_w']:
                     div_str = "Identical Cap"
-                elif d_row['golden_cap_w'] < l_row['golden_cap_w']:
-                    div_str = f"L2 Saturates Earlier (+{l_row['golden_cap_w'] - d_row['golden_cap_w']}W)"
+                elif d_row['best_cap_w'] < l_row['best_cap_w']:
+                    div_str = f"L2 Saturates Earlier (+{l_row['best_cap_w'] - d_row['best_cap_w']}W)"
                 else:
                     div_str = "DRAM Higher"
             else:
@@ -542,12 +542,6 @@ def generate_comparative_report(dram_gz, l2_gz, output_dir, threshold):
 
             f.write(f"| **{ai:.1f}** FLOP/B | {d_cap_str} | {d_bw_str} | {d_tf_str} | {d_ai_str} | {d_sav_str} | {l_cap_str} | {l_bw_str} | {l_tf_str} | {l_ai_str} | {l_sav_str} | {div_str} |\n")
 
-        f.write("\n## 3. Scientific Analysis & Real-Time Governor Heuristics\n\n")
-        f.write("1. **Early Saturation of L2-Resident Workloads:**\n")
-        f.write("   Because L2 cache provides over $4.5\\times$ greater bandwidth than the GDDR6 bus, workloads hitting L2 cache hit their ALU compute ceiling at much lower arithmetic intensities ($I \\ge 25$ vs $I \\ge 113$).\n")
-        f.write("   Consequently, the Golden Zone for L2-resident kernels rapidly shifts to the unconstrained baseline (250 W) well before DRAM-resident workloads.\n")
-        f.write("2. **Governor Classification Rule:**\n")
-        f.write("   When the CUPTI profiler samples operational intensity, the governor must cross-reference DRAM bandwidth vs L2 bandwidth (`dram__bytes.sum` vs `lts__t_bytes.sum`). If L2 hit rate $> 80\\%$, the governor must evaluate against $I^*_{\\text{L2}} \\approx 25\\text{ FLOP/B}$ instead of $I^*_{\\text{DRAM}} \\approx 113\\text{ FLOP/B}$ to avoid inducing massive performance stalls.\n")
 
     print(f"\nGenerated Comparative Summary Report: {report_path}")
 
@@ -568,7 +562,7 @@ def run_experiment():
     parser.add_argument("--target-duration-s", type=float, default=80,
                         help="Target execution duration per power cap trial in seconds (default: 80s for steady-state sampling)")
     parser.add_argument("--deg-threshold", type=float, default=8.0,
-                        help="Maximum permissible runtime degradation %% for Golden Zone (default: 8.0%%)")
+                        help="Maximum permissible runtime degradation %% for Best Cap (default: 8.0%%)")
     parser.add_argument("--dram-buffer-mb", type=int, default=256,
                         help="Buffer size in MB for DRAM regime (default: 256 MB)")
     parser.add_argument("--l2-buffer-mb", type=int, default=16,
@@ -579,7 +573,7 @@ def run_experiment():
                         help="Iterations for L2 benchmark passes (default: 400 to normalize elapsed time)")
     parser.add_argument("--warmup-iters", type=int, default=10, help="Warmup iterations")
     parser.add_argument("--saturation-count", type=int, default=8,
-                        help="Stop if Golden Zone saturates at baseline or steady plateau for N consecutive steps (default: 8)")
+                        help="Stop if Best Cap saturates at baseline or steady plateau for N consecutive steps (default: 8)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Test mode: runs without setting hardware power caps")
     parser.add_argument("--output-dir", type=str, default="experiment/results",
@@ -598,7 +592,7 @@ def run_experiment():
     default_limit_w = default_limit_mw / 1000.0
 
     print("=" * 80)
-    print(f"HIERARCHICAL REAL-TIME ROOFLINE: DRAM vs. L2 CACHE GOLDEN ZONES")
+    print(f"HIERARCHICAL REAL-TIME ROOFLINE: DRAM vs. L2 CACHE BEST CAPS")
     print(f"Device: {device_name}")
     print(f"Total Benchmark Runs Planned: {args.runs} (Starting at run{args.start_run})")
     print(f"Selected Memory Target: {args.memory_target.upper()}")
@@ -643,12 +637,12 @@ def run_experiment():
             print(f"# Destination Folder: {run_dir}")
             print(f"{'#'*80}\n")
 
-            dram_gz = None
-            l2_gz = None
+            dram_best = None
+            l2_best = None
 
             # Regime 1: GDDR DRAM
             if args.memory_target in ["both", "dram"]:
-                _, dram_gz = run_single_regime(
+                _, dram_best = run_single_regime(
                     regime_name="DRAM",
                     buffer_mb=args.dram_buffer_mb,
                     iterations=args.dram_iterations,
@@ -664,7 +658,7 @@ def run_experiment():
 
             # Regime 2: L2 Cache
             if args.memory_target in ["both", "l2"]:
-                _, l2_gz = run_single_regime(
+                _, l2_best = run_single_regime(
                     regime_name="L2",
                     buffer_mb=args.l2_buffer_mb,
                     iterations=args.l2_iterations,
@@ -679,8 +673,8 @@ def run_experiment():
                 )
 
             # Comparative Report for this run
-            if args.memory_target == "both" and dram_gz is not None and l2_gz is not None:
-                generate_comparative_report(dram_gz, l2_gz, run_dir, args.deg_threshold)
+            if args.memory_target == "both" and dram_best is not None and l2_best is not None:
+                generate_comparative_report(dram_best, l2_best, run_dir, args.deg_threshold)
 
             print(f"\n[RUN COMPLETED] {run_name} finished successfully. Results saved in {run_dir}")
 

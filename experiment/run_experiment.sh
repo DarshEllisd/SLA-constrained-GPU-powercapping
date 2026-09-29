@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PYTHON_EXEC="${PYTHON_EXEC:-python3}"
 
 echo "================================================================="
-echo "  Real-Time Roofline: Arithmetic Intensity Golden Zone Sweep"
+echo "  Real-Time Roofline: Arithmetic Intensity Best Cap Sweep"
 echo "================================================================="
 
 # 1. Compile CUDA kernels if not already built or if .cu is newer
