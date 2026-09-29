@@ -1,6 +1,5 @@
 # SLA-Constrained GPU Power Capping via Hierarchical Roofline Characterization
 
-Experiment harness and measured data for the paper of the same name.
 
 A GPU's power limit is set for workloads using 100% of cores, but many kernels wait on memory much
 of the time while the GPU holds its clocks high. This harness measures how much of that power can be
@@ -27,10 +26,8 @@ The same symbols are used here as in the paper:
 | FFMA | fused multiply–add |
 | NVML | NVIDIA Management Library |
 
-### Paper term ↔ data column
+### Terminologies
 
-The harness predates the paper's wording, so some CSV columns carry older names. They mean the same
-things:
 
 | paper | data |
 |---|---|
@@ -41,7 +38,7 @@ things:
 | `E_h` | `total_energy_j` |
 | Energy Saved | `energy_saved_pct` |
 | `C` | the `--power-caps` flag; `power_cap_w` per row |
-| memory level `h` | the `regime` column, and the `dram/` and `l2/` directories |
+| memory hierarchy `h` | the `regime` column, and the `dram/` and `l2/` directories |
 
 "Best Cap zone" in filenames and in `hierarchical_roofline_summary.md` is the Best Cap.
 
@@ -285,21 +282,6 @@ L2    0:17.57+-0.03, 10:10.12+-0.16, 20:9.70+-0.05, ...
 ```
 
 Paths resolve relative to the script, so it runs from any working directory.
-
----
-
-## Caveats
-
-These match the paper's Limitations.
-
-- `power_cap_w` is the **requested** limit, not delivered power. At α = 0 every request between
-  100 W and 140 W draws a mean 143.2–143.4 W; the cap is not enforced below that floor.
-- Clocks are **not** locked. The GPU's own voltage–frequency governor stays active under every cap,
-  which is deliberate — locking clocks measures a machine that does not exist in deployment.
-- `E_h` comes from NVML's power reading over the timed interval, not from an external meter.
-- These are microbenchmarks, run on a single isolated GPU. A shared GPU, or a real application whose
-  behaviour changes as it runs, was not tested.
-- The Best Cap values are particular to this GPU; another card needs its own sweep.
 
 ---
 
